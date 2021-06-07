@@ -1,29 +1,41 @@
-import boto3
-import logging 
+import boto3, argparse
+import sys
+import json
 
-logger = logging.getLogger()
-#bucket.object_versions.delete()
+# Connections with s3
+s3_client = boto3.client('s3')
 
-def permanently_delete_object(bucket, object_key):
-    """
-    Permanently deletes a versioned object by deleting all of its versions.
-    """
-    try:
-        bucket.object_versions.filter(Prefix=object_key).delete()
-        logger.info("Permanently deleted all versions of object %s.", object_key)
-        print("deleting")
-    except ClientError:
-        logger.exception("Couldn't delete all versions of %s.", object_key)
-        raise
+BUCKET_NAME = 'simian-scania-prod-output-temp'
+#bucket = s3.Bucket(BUCKET_NAME)
 
-def main():
-    s3 = boto3.resource('s3')
-    s3_bucket = s3.Bucket('simian-scania-prod-output-temp')
-    object_key = '8qAy2oaqIgp6tFVFrxTya1D9BTrWzIvt'
+def s3_del(Prefix='', Delimiter='/'):
+    result = s3_client.list_object_versions(
+                                        Bucket=BUCKET_NAME,
+                                        Prefix=Prefix,
+                                        Delimiter='/'
+                                        )
 
-    permanently_delete_object(s3_bucket, object_key)
+    # CommonPrefixes key has all the sub folders in current directory
+    common_prefixes = result.get('CommonPrefixes')
 
-if __name__ == "__main__":
-    main()
+    delete_marked_files = result.get('DeleteMarkers')
 
+    if delete_marked_files:
+        for delete_marked_file in delete_marked_files:
+            #Delete the delete marker
+            response = s3_client.delete_object(
+                Bucket=BUCKET_NAME,
+                Key=delete_marked_file['Key'],
+                VersionId=delete_marked_file['VersionId']
+            )
 
+    else:
+        print('No deleted files found in folder>>')
+        print(Prefix)
+    if common_prefixes:
+        for common_prefix in common_prefixes:
+            folder = common_prefix.get('Prefix')
+            # Recursively call init function to go into all sub folders
+            s3_del(Prefix=folder)
+
+s3_del(Prefix='enter-your-prefix')
